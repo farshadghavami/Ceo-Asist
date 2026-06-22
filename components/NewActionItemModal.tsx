@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { ActionItem, Department, Employee } from '../types';
-import { DEPARTMENTS } from '../constants';
 
 // Fix: Add type definitions for Web Speech API
 // These definitions are necessary because the Web Speech API is not part of the standard TypeScript DOM library.
@@ -54,6 +53,7 @@ interface NewActionItemModalProps {
     onClose: () => void;
     onAddItem: (item: Omit<ActionItem, 'id' | 'completed' | 'completionDate'>) => void;
     employees: Employee[];
+    departments: Department[];
 }
 
 const useSpeechRecognition = () => {
@@ -107,9 +107,9 @@ const useSpeechRecognition = () => {
     return { transcript, isListening, startListening, stopListening, setTranscript };
 };
 
-export const NewActionItemModal: React.FC<NewActionItemModalProps> = ({ isOpen, onClose, onAddItem, employees }) => {
+export const NewActionItemModal: React.FC<NewActionItemModalProps> = ({ isOpen, onClose, onAddItem, employees, departments }) => {
     const [task, setTask] = useState('');
-    const [department, setDepartment] = useState<Department>('عمومی');
+    const [department, setDepartment] = useState<Department>(departments[0] || 'عمومی');
     const [dueDate, setDueDate] = useState('');
     const [assigneeId, setAssigneeId] = useState<string>('');
     const { transcript, isListening, startListening, stopListening, setTranscript } = useSpeechRecognition();
@@ -119,6 +119,12 @@ export const NewActionItemModal: React.FC<NewActionItemModalProps> = ({ isOpen, 
             setTask(transcript);
         }
     }, [transcript]);
+    
+    useEffect(() => {
+        if (isOpen && departments.length > 0) {
+            setDepartment(departments[0]);
+        }
+    }, [isOpen, departments]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -126,10 +132,11 @@ export const NewActionItemModal: React.FC<NewActionItemModalProps> = ({ isOpen, 
             alert('لطفا تمام فیلدهای الزامی را پر کنید.');
             return;
         }
-        onAddItem({ task, department, dueDate, assigneeId: assigneeId ? parseInt(assigneeId) : undefined });
+        // FIX: Add missing 'comments' property to satisfy the ActionItem type.
+        onAddItem({ task, department, dueDate, assigneeId: assigneeId ? parseInt(assigneeId) : undefined, comments: [] });
         // Reset form
         setTask('');
-        setDepartment('عمومی');
+        setDepartment(departments[0] || 'عمومی');
         setDueDate('');
         setAssigneeId('');
         setTranscript('');
@@ -172,7 +179,7 @@ export const NewActionItemModal: React.FC<NewActionItemModalProps> = ({ isOpen, 
                                         onChange={e => setDepartment(e.target.value as Department)}
                                         className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
                                     >
-                                        {DEPARTMENTS.map(dep => <option key={dep} value={dep}>{dep}</option>)}
+                                        {departments.map(dep => <option key={dep} value={dep}>{dep}</option>)}
                                     </select>
                                 </div>
                                 <div>

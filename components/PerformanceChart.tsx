@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import type { ActionItem, Department } from '../types';
-import { DEPARTMENTS_CONFIG } from '../constants';
+import { getDepartmentConfig } from '../constants';
 
 interface PerformanceChartProps {
     actionItems: ActionItem[];
+    departments: Department[];
     chartType: 'progress' | 'pie';
     onChartTypeChange: (type: 'progress' | 'pie') => void;
     onDepartmentSelect: (department: Department) => void;
@@ -17,7 +18,7 @@ interface PieData {
     percentage: number;
 }
 
-export const PerformanceChart: React.FC<PerformanceChartProps> = ({ actionItems, chartType, onChartTypeChange, onDepartmentSelect }) => {
+export const PerformanceChart: React.FC<PerformanceChartProps> = ({ actionItems, departments, chartType, onChartTypeChange, onDepartmentSelect }) => {
     const [hoveredData, setHoveredData] = useState<PieData | null>(null);
 
     const stats = useMemo(() => {
@@ -32,7 +33,7 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ actionItems,
         
         const completionRate = Math.round((completed / total) * 100);
 
-        const tasksByDept = Object.keys(DEPARTMENTS_CONFIG).reduce((acc, dept) => {
+        const tasksByDept = departments.reduce((acc, dept) => {
             acc[dept as Department] = {
                 total: actionItems.filter(item => item.department === dept).length,
                 completed: actionItems.filter(item => item.department === dept && item.completed).length,
@@ -41,16 +42,16 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ actionItems,
         }, {} as Record<Department, { total: number; completed: number }>);
         
         return { total, completed, pending, overdue, completionRate, tasksByDept };
-    }, [actionItems]);
+    }, [actionItems, departments]);
 
     const pieData = useMemo<PieData[]>(() => {
         if (!stats || stats.completed === 0) return [];
-        return Object.entries(stats.tasksByDept)
+        return (Object.entries(stats.tasksByDept) as [Department, { total: number; completed: number }][])
             .filter(([, data]) => data.completed > 0)
             .map(([dept, data]) => ({
                 name: dept,
                 value: data.completed,
-                color: DEPARTMENTS_CONFIG[dept as Department].colorHex,
+                color: getDepartmentConfig(dept).colorHex,
                 percentage: Math.round((data.completed / stats.completed) * 100)
             }));
     }, [stats]);
@@ -113,22 +114,25 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ actionItems,
                  <div className="w-full">
                     <h4 className="text-md font-semibold mb-3 text-slate-700 dark:text-slate-200">پیشرفت تکمیل اقدامات بر اساس دپارتمان</h4>
                     <div className="space-y-3">
-                        {Object.entries(stats.tasksByDept).filter(([, data]) => data.total > 0).map(([dept, data]) => (
-                            <div key={dept}>
-                                <div className="flex justify-between items-center mb-1 text-sm">
-                                    <span className="font-medium" style={{ color: DEPARTMENTS_CONFIG[dept as Department].colorHex }}>{dept}</span>
-                                    <span className="text-slate-500 dark:text-slate-400">
-                                        {data.completed.toLocaleString('fa-IR')} / {data.total.toLocaleString('fa-IR')}
-                                    </span>
+                        {(Object.entries(stats.tasksByDept) as [Department, { total: number; completed: number }][]).filter(([, data]) => data.total > 0).map(([dept, data]) => {
+                            const deptConfig = getDepartmentConfig(dept);
+                            return (
+                                <div key={dept}>
+                                    <div className="flex justify-between items-center mb-1 text-sm">
+                                        <span className="font-medium" style={{ color: deptConfig.colorHex }}>{dept}</span>
+                                        <span className="text-slate-500 dark:text-slate-400">
+                                            {data.completed.toLocaleString('fa-IR')} / {data.total.toLocaleString('fa-IR')}
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2.5">
+                                        <div
+                                            className="h-2.5 rounded-full transition-all duration-500"
+                                            style={{ width: `${data.total > 0 ? (data.completed / data.total) * 100 : 0}%`, backgroundColor: deptConfig.colorHex }}
+                                        ></div>
+                                    </div>
                                 </div>
-                                <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2.5">
-                                    <div
-                                        className="h-2.5 rounded-full transition-all duration-500"
-                                        style={{ width: `${data.total > 0 ? (data.completed / data.total) * 100 : 0}%`, backgroundColor: DEPARTMENTS_CONFIG[dept as Department].colorHex }}
-                                    ></div>
-                                </div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 </div>
             ) : (

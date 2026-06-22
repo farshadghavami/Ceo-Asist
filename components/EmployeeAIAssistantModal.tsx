@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Chat, Modality } from "@google/genai";
-import type { ActionItem, Employee } from '../types';
+import type { ActionItem } from '../types';
 
 interface Message {
     role: 'user' | 'model';
@@ -129,63 +129,71 @@ const useSpeechRecognition = () => {
     return { transcript, isListening, startListening, stopListening, setTranscript };
 };
 
-interface AIConversationalModalProps {
+interface EmployeeAIAssistantModalProps {
     isOpen: boolean;
     onClose: () => void;
-    actionItems: ActionItem[];
-    employees: Employee[];
+    selectedTask: ActionItem | null;
 }
 
-export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ isOpen, onClose, actionItems, employees }) => {
+export const EmployeeAIAssistantModal: React.FC<EmployeeAIAssistantModalProps> = ({ isOpen, onClose, selectedTask }) => {
     const [chat, setChat] = useState<Chat | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    
+    // Voice Interaction State
+    const { transcript, isListening, startListening, stopListening, setTranscript } = useSpeechRecognition();
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [autoSpeak, setAutoSpeak] = useState(false);
-    
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-    const { transcript, isListening, startListening, stopListening, setTranscript } = useSpeechRecognition();
     const audioContextRef = useRef<AudioContext | null>(null);
     const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+    const suggestions = selectedTask 
+        ? ["مراحل انجام این کار", "پیش‌نویس گزارش وضعیت", "نوشتن ایمیل پیگیری", "چالش‌های احتمالی"]
+        : ["وظایف امروز من", "نکاتی برای افزایش تمرکز", "چطور اولویت‌بندی کنم؟", "خلاصه عملکرد"];
 
     useEffect(() => {
         if (isOpen) {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
             
-            const actionItemsContext = actionItems.map(item =>
-                `- ${item.task} (Due: ${item.dueDate}, Status: ${item.completed ? 'Completed' : 'Pending'}, Department: ${item.department}, Assignee: ${employees.find(e => e.id === item.assigneeId)?.name || 'None'})`
-            ).join('\n');
-            const employeesContext = employees.map(emp => `- ${emp.name}`).join('\n');
+            const taskContext = selectedTask 
+                ? `Current Task Context:
+                    - Title: "${selectedTask.task}"
+                    - Department: ${selectedTask.department}
+                    - Due Date: ${selectedTask.dueDate}
+                    - Status: ${selectedTask.completed ? 'Completed' : 'Pending'}`
+                : "No specific task selected.";
 
-            const systemInstruction = `You are a helpful business assistant for a product named '1001'. You are speaking in Persian. You have access to the current list of action items and employees.
+            const systemInstruction = `You are a highly efficient and concise AI assistant for an employee using the '1001' business app. 
             
-            Current Action Items:
-            ${actionItemsContext}
+            ${taskContext}
             
-            Current Employees:
-            ${employeesContext}
+            STRICT RULES FOR RESPONSE:
+            1. **BE EXTREMELY CONCISE:** Give short, direct answers. Bullet points are best.
+            2. **NO FLUFF:** Do not say "Hello", "Sure", "I can help with that", or "Here is the answer". Just give the answer.
+            3. **LANGUAGE:** Speak only in Persian.
+            4. **GOAL:** Provide actionable steps or text drafts immediately.
             
-            Answer questions based on this data. Be concise and helpful. Since your response might be read aloud, keep it natural and conversational.`;
+            Example:
+            User: "Draft an email."
+            You: "موضوع: گزارش وضعیت\nمتن: سلام، پروژه طبق برنامه پیش می‌رود." (Do not add "Here is your draft").`;
 
             const newChat = ai.chats.create({
                 model: 'gemini-2.5-flash',
-                config: {
-                    systemInstruction: systemInstruction,
-                },
+                config: { systemInstruction },
             });
+
             setChat(newChat);
-            setMessages([{
-                role: 'model',
-                text: 'سلام! من مشاور هوش مصنوعی 1001 هستم. چطور می‌توانم به شما کمک کنم؟'
-            }]);
+            // No initial greeting message to keep it clean, or a very short one.
+            setMessages([{ role: 'model', text: selectedTask ? `در مورد «${selectedTask.task}» چه کمکی لازم دارید؟` : 'چه کمکی لازم دارید؟' }]);
         } else {
-            setChat(null);
-            setMessages([]);
+            setChat(null); 
+            setMessages([]); 
             setInput('');
             stopAudio();
         }
-    }, [isOpen, actionItems, employees]);
+    }, [isOpen, selectedTask]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -194,11 +202,10 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
     useEffect(() => {
         if (transcript) {
             setInput(transcript);
-            setAutoSpeak(true); // If user used voice, auto reply with voice
+            setAutoSpeak(true);
         }
     }, [transcript]);
-
-    // Effect to send message when transcript is received and listening stops (optional flow, here we just set input)
+    
     useEffect(() => {
         if (transcript && !isListening) {
              handleSend(transcript);
@@ -206,13 +213,12 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
         }
     }, [isListening, transcript]);
 
-
     const stopAudio = () => {
         if (activeSourceRef.current) {
             try {
                 activeSourceRef.current.stop();
             } catch (e) {
-                // Ignore error if already stopped
+                // Ignore error
             }
             activeSourceRef.current = null;
         }
@@ -231,7 +237,7 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
                     responseModalities: [Modality.AUDIO],
                     speechConfig: {
                         voiceConfig: {
-                            prebuiltVoiceConfig: { voiceName: 'Kore' }, // 'Kore' is usually a good female voice, often handles various languages reasonably well or falls back.
+                            prebuiltVoiceConfig: { voiceName: 'Kore' },
                         },
                     },
                 },
@@ -244,7 +250,6 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
                 }
                 const ctx = audioContextRef.current;
                 
-                // Ensure context is running (needed for some browsers policy)
                 if (ctx.state === 'suspended') {
                     await ctx.resume();
                 }
@@ -280,7 +285,7 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
         setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsTyping(true);
-        stopAudio(); // Stop any current audio
+        stopAudio();
         
         try {
             const result = await chat.sendMessageStream({ message: textToSend });
@@ -297,17 +302,15 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
                 });
             }
 
-            // After full response, if autoSpeak is on, play audio
             if (autoSpeak) {
                 speakMessage(modelResponse);
-                setAutoSpeak(false); // Reset for next turn unless voice is used again
+                setAutoSpeak(false);
             }
-
         } catch (error) {
             console.error("Chat error:", error);
             setMessages(prev => {
                 const newMessages = [...prev];
-                const errorMessage = "متاسفانه خطایی رخ داد. لطفا دوباره تلاش کنید.";
+                const errorMessage = "خطا در ارتباط.";
                 if (newMessages[newMessages.length - 1].role === 'model') {
                      newMessages[newMessages.length - 1].text = errorMessage;
                 } else {
@@ -330,8 +333,8 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
             >
                 <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center flex-shrink-0">
                     <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                        <i className="fa-solid fa-wand-magic-sparkles text-indigo-500"></i>
-                        <span>مشاور صوتی 1001</span>
+                        <i className="fa-solid fa-robot text-indigo-500"></i>
+                        <span>دستیار هوش مصنوعی</span>
                     </h2>
                     <div className="flex items-center gap-2">
                         {isSpeaking && (
@@ -351,11 +354,11 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
                     {messages.map((msg, index) => (
                         <div key={index} className={`flex items-end gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             {msg.role === 'model' && (
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-                                    <span className="font-bold text-white text-sm tracking-tighter">1001</span>
+                                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 to-blue-600 flex items-center justify-center flex-shrink-0">
+                                    <i className="fa-solid fa-robot text-white text-sm"></i>
                                 </div>
                             )}
-                            <div className={`max-w-[80%] p-3 rounded-2xl group relative ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-lg'}`}>
+                            <div className={`max-w-[85%] p-3 rounded-2xl group relative ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-lg'}`}>
                                 <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                                 {msg.role === 'model' && !isTyping && (
                                     <button 
@@ -371,8 +374,8 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
                     ))}
                     {isTyping && (
                          <div className="flex items-end gap-2 justify-start">
-                             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-                                 <span className="font-bold text-white text-sm tracking-tighter">1001</span>
+                             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 to-blue-600 flex items-center justify-center flex-shrink-0">
+                                 <i className="fa-solid fa-robot text-white text-sm"></i>
                              </div>
                              <div className="max-w-[80%] p-3 rounded-2xl bg-slate-200 dark:bg-slate-700">
                                 <div className="typing-indicator">
@@ -383,19 +386,34 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
                     )}
                     <div ref={messagesEndRef} />
                 </div>
+                
+                {/* Suggestions Chips */}
+                {!isTyping && (
+                    <div className="px-4 py-2 flex gap-2 overflow-x-auto no-scrollbar border-t border-slate-100 dark:border-slate-800">
+                        {suggestions.map((suggestion, idx) => (
+                            <button 
+                                key={idx}
+                                onClick={() => handleSend(suggestion)}
+                                className="flex-shrink-0 whitespace-nowrap px-3 py-1.5 bg-indigo-50 dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 text-xs font-medium rounded-full border border-indigo-100 dark:border-slate-600 hover:bg-indigo-100 dark:hover:bg-slate-600 transition-colors"
+                            >
+                                {suggestion}
+                            </button>
+                        ))}
+                    </div>
+                )}
 
-                <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0">
+                <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 bg-slate-50 dark:bg-slate-800/50 rounded-b-2xl">
                     <div className="relative flex items-center gap-2">
-                         <button
+                        <button
                             onClick={isListening ? stopListening : startListening}
-                            className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${
                                 isListening 
                                     ? 'bg-red-500 text-white animate-pulse shadow-lg ring-4 ring-red-200 dark:ring-red-900' 
-                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                    : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 shadow-sm'
                             }`}
                             title="ورود صوتی"
                         >
-                            <i className={`fa-solid ${isListening ? 'fa-stop' : 'fa-microphone'} text-lg`}></i>
+                            <i className={`fa-solid ${isListening ? 'fa-stop' : 'fa-microphone'}`}></i>
                         </button>
                         
                         <div className="relative flex-1">
@@ -404,23 +422,23 @@ export const AIConversationalModal: React.FC<AIConversationalModalProps> = ({ is
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-                                placeholder="پیام خود را بنویسید یا صحبت کنید..."
-                                className="w-full p-3 pl-12 border border-slate-300 dark:border-slate-600 rounded-full focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-slate-700 dark:text-white transition-shadow"
+                                placeholder="سوال خود را بپرسید..."
+                                className="w-full p-2.5 pl-10 border border-slate-300 dark:border-slate-600 rounded-full focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-slate-700 dark:text-white transition-shadow text-sm"
                                 disabled={isTyping || isListening}
                             />
                             <button
                                 onClick={() => handleSend()}
                                 disabled={!input.trim() || isTyping}
-                                className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 bg-indigo-600 text-white rounded-full flex items-center justify-center transition-all hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                                className="absolute left-1.5 top-1/2 -translate-y-1/2 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center transition-all hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
                                 aria-label="ارسال پیام"
                             >
-                                <i className="fa-solid fa-paper-plane"></i>
+                                <i className="fa-solid fa-paper-plane text-xs"></i>
                             </button>
                         </div>
                     </div>
                      {isListening && (
-                        <p className="text-center text-xs text-indigo-500 mt-2 font-medium animate-pulse">
-                            در حال گوش دادن...
+                        <p className="text-center text-[10px] text-indigo-500 mt-1 font-medium animate-pulse">
+                            در حال شنیدن...
                         </p>
                     )}
                 </div>

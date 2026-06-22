@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { ActionItem, Employee } from '../types';
 
 interface ReminderModalProps {
@@ -18,12 +18,24 @@ const formatDate = (dateString: string) => {
 };
 
 export const ReminderModal: React.FC<ReminderModalProps> = ({ isOpen, onClose, item, assignee }) => {
+    const [customMessage, setCustomMessage] = useState('');
+
+    useEffect(() => {
+        if (isOpen && item && assignee) {
+            const template = `سلام {assigneeName} عزیز،\n\nاین یک یادآوری برای اقدام زیر است:\n"{task}"\n\nتاریخ سررسید این اقدام {dueDate} می‌باشد.\n\nلطفا پیگیری بفرمایید.`;
+            const populatedMessage = template
+                .replace('{assigneeName}', assignee.name)
+                .replace('{task}', item.task)
+                .replace('{dueDate}', formatDate(item.dueDate));
+            setCustomMessage(populatedMessage);
+        }
+    }, [isOpen, item, assignee]);
+
+
     if (!isOpen || !item || !assignee) return null;
 
-    const message = `یادآوری: لطفا اقدام "${item.task}" با سررسید ${formatDate(item.dueDate)} را پیگیری کنید.`;
-    const encodedMessage = encodeURIComponent(message);
-
     const handleSend = (platform: 'whatsapp' | 'telegram' | 'sms') => {
+        const encodedMessage = encodeURIComponent(customMessage);
         let url = '';
         switch (platform) {
             case 'whatsapp':
@@ -55,10 +67,19 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({ isOpen, onClose, i
                     </div>
                     
                     <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">متن پیام:</p>
-                        <blockquote className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-300">
-                           {message}
-                        </blockquote>
+                        <label htmlFor="reminder-message" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            متن پیام:
+                        </label>
+                        <textarea
+                            id="reminder-message"
+                            rows={6}
+                            value={customMessage}
+                            onChange={(e) => setCustomMessage(e.target.value)}
+                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white text-sm leading-relaxed"
+                        />
+                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            می‌توانید از متغیرهای <code className="bg-gray-200 dark:bg-gray-600 p-0.5 rounded text-xs">{'{assigneeName}'}</code>, <code className="bg-gray-200 dark:bg-gray-600 p-0.5 rounded text-xs">{'{task}'}</code>, و <code className="bg-gray-200 dark:bg-gray-600 p-0.5 rounded text-xs">{'{dueDate}'}</code> استفاده کنید.
+                        </p>
                     </div>
 
                     <div className="mt-6">
